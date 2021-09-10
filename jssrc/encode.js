@@ -36,7 +36,7 @@ class Encoder {
         if (this.videoCodecType == "h264") {
             await this.vencoder_.configure({
                 avc: {format: "avc"},
-                codec: 'avc1.4d0032',
+                codec: 'avc1.42e01f',
                 width: 1280,
                 height: 720
             })
@@ -45,14 +45,14 @@ class Encoder {
                 codec: 'vp8',
                 width: 1280,
                 height: 720,
-                bitrate: 1200000,
+                bitrate: 2000000,
             })
         }  else if (this.videoCodecType == "vp9") {
             await this.vencoder_.configure({
                 codec: 'vp09.00.10.08',
                 width: 1280,
                 height: 720,
-                bitrate: 1200000,
+                bitrate: 2000000,
             })
         } else {
             console.error("video codec type error:", this.videoCodecType);
@@ -106,7 +106,6 @@ class Encoder {
 
     audioTransform(frame, controller) {
         return (frame, controller) => {
-            //console.info(frame)
             this.aencoder_.encode(frame);
             controller.enqueue(frame);
         }
@@ -114,9 +113,15 @@ class Encoder {
     }
 
     async handleVideoEncoded(chunk, metadata) {
-        const { type, timestamp, data } = chunk
+        if ((chunk == null) || (chunk.byteLength <= 0)) {
+            return;
+        }
+        // actual bytes of encoded data
+        let chunkData = new Uint8Array(chunk.byteLength);
+        chunk.copyTo(chunkData);
 
-        let ts = timestamp/1000;
+        let ts = chunk.timestamp/1000;
+
         if (metadata.decoderConfig) {
             //todo:
             let avcSeqHdr = metadata.decoderConfig.description;
@@ -127,18 +132,22 @@ class Encoder {
             }
         }
 
-        let isKey = false;
-        if (type == "key") {
-            isKey = true;
-        }
+        let isKey = chunk.type == 'key';
+
         this.mux.DoMux({media:"video", codecType: this.videoCodecType,
-            timestamp:ts, data, isSeq:false, isKey});
+                timestamp:ts, data:chunkData, isSeq:false, isKey});
     }
 
     async handleAudioEncoded(chunk, metadata) {
-        const {timestamp, data } = chunk
+        if ((chunk == null) || (chunk.byteLength <= 0)) {
+            return;
+        }
+        // actual bytes of encoded data
+        let chunkData = new Uint8Array(chunk.byteLength);
+        chunk.copyTo(chunkData);
 
-        let ts = timestamp/1000;
+        let ts = chunk.timestamp/1000;
+
         if (metadata.decoderConfig) {
             //todo:
             let audioSeqHdr = metadata.decoderConfig.description;
@@ -147,6 +156,6 @@ class Encoder {
         }
 
         this.mux.DoMux({media:"audio", codecType: this.audioCodecType,
-                timestamp:ts, data, isSeq:false, isKey:false});
+                    timestamp:ts, data:chunkData, isSeq:false, isKey:false});
     }
 }
