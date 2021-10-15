@@ -1,3 +1,8 @@
+// import FlvMux from './FlvMux';
+// import Encoder from './Encoder';
+const FlvMux  = require('./FlvMux');
+const Encoder  = require('./Encoder');
+
 function stringToUint8Array(str) {
     var arr = [];
     for (var i = 0, j = str.length; i < j; ++i) {
@@ -22,10 +27,24 @@ class WsWriter {
     }
 
     async Init(host, uri) {
-        //"localhost:1900", "/live/1000.flv"
-        console.log("try to open host:", host, "uri:", uri);
-        let url = "ws://" + host + "/" + uri;
+        let url = "";
+        
+        if (uri != "") {
+            url = "ws://" + host + "/" + uri;
+            console.log("websocket url:", url);
+        } else {
+            url = "wss://" + host;
+            console.log("websocket ssl url:", url);
+        }
         this.ws = new WebSocket(url);
+        /*
+        this.ws = new WebSocket(url, {
+            protocolVersion: 8,
+            origin: 'https://' + host,
+            rejectUnauthorized: false
+          });
+        */
+    
         this.ws.onopen = () =>
         {
             console.log("ws client is opened....");
@@ -77,6 +96,5 @@ class WsWriter {
     async close() {
         
     }
-
-
 }
+module.exports = WsWriter;

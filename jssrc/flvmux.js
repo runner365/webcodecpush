@@ -1,3 +1,5 @@
+
+
 let FLV_CODEC_H264 = 7;
 let FLV_CODEC_AV1  = 13;
 let FLV_CODEC_VP8  = 14;
@@ -149,3 +151,5 @@ class FlvMux {
         await this.Writer.Send(data)
     }
 }
+
+module.exports = FlvMux;

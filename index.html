@@ -1,26 +1,13 @@
 <!DOCTYPE html>
 <html>
     <head>
-        <script src="jssrc/encode.js"></script>
-        <script src="jssrc/flvmux.js"></script>
-        <script src="jssrc/http3writer.js"></script>
-        <script src="jssrc/wswriter.js"></script>
-        <script type='text/javascript'>
-            async function publish() {
-                let videoElement = document.getElementById('video_container_publish')
-                wsClient = new WsWriter();
-
-                wsClient.SetVideoElement(videoElement);
-                wsClient.Init("127.0.0.1:1900", "live/6699.flv");
-            }
-        </script>
     </head>
 
     <body>
         <h1>Webcodec&Webtransport push demo</h1>
         <br/>
         <div>
-            <button onclick="publish()">publish</button>
+            <button id="publishId">publish</button>
             <br><br>
         </div>
 

@@ -34,3 +34,5 @@ class Http3Writer {
         this.stream.close();
     }
 }
+
+module.exports = Http3Writer;

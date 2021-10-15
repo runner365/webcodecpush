@@ -1,3 +1,5 @@
+
+
 class Encoder {
     constructor() {
         this.videoElement_ = null;
@@ -38,7 +40,9 @@ class Encoder {
                 avc: {format: "avc"},
                 codec: 'avc1.42e01f',
                 width: 1280,
-                height: 720
+                height: 720,
+                bitrate: 3000000,
+                hardwareAcceleration: "prefer-hardware",
             })
         } else if (this.videoCodecType == "vp8") {
             await this.vencoder_.configure({
@@ -159,3 +163,5 @@ class Encoder {
                     timestamp:ts, data:chunkData, isSeq:false, isKey:false});
     }
 }
+
+module.exports = Encoder;
