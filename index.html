@@ -7,13 +7,15 @@
         <h1>Webcodec&Webtransport push demo</h1>
         <br/>
         <div>
+            <label for="serverHost">Websocket Server Host:</label>
+            <input type="text" id="serverHost" placeholder="hostname:port, eg: localhost:1900" style="width:300px;margin-right:8px;">
+            <label for="subpath">SubPath:</label>
+            <input type="text" id="subpath" placeholder="live/livestream" style="width:250px;margin-right:8px;">
             <button id="publishId">publish</button>
-            <br><br>
         </div>
-
+        <br/>
         <div id="medialive">
             publish preview:
-            <br/>
             <div id="container">
                 <video id="video_container_publish" playsinline controls autoplay muted width="640" height="480">
                 </video>
