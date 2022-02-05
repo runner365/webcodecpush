@@ -41,8 +41,9 @@ class Encoder {
                 codec: 'avc1.42e01f',
                 width: 1280,
                 height: 720,
-                bitrate: 3000000,
+                //bitrate: 3000000,
                 hardwareAcceleration: "prefer-hardware",
+                latencyMode: 'realtime',
             })
         } else if (this.videoCodecType == "vp8") {
             await this.vencoder_.configure({
