@@ -1,7 +1,7 @@
 const WsWriter  = require('./WsWriter');
 
 function windowInit() {
-    document.getElementById('serverHost').value = "localhost:1900";
+    document.getElementById('serverHost').value = "localhost:12000";
     document.getElementById('subpath').value = "live/livestream";
 }
 

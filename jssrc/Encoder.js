@@ -6,7 +6,7 @@ class Encoder {
         this.vencoder_ = null;
         this.aencoder_ = null;
         this.sendFrames_ = 0;
-        this.videoGop_ = 30;
+        this.videoGop_ = 60;
         this.videoCodecType = "h264";
         //this.videoCodecType = "vp8";
         //this.videoCodecType = "vp9";
@@ -19,85 +19,119 @@ class Encoder {
     }
 
     async Init(videoElement) {
+        let shared = false;
+
         const constraints = {
-            video: { width: { exact: 1280 }, height: { exact: 720 } },
+            video: { width: { exact: 1280 }, height: { exact: 720 }, frameRate: { exact: 15 } },
             audio: {
                 channelCount:2,
                 sampleRate:48000,
             }
         }
 
-        //video encode init
-        this.vencoder_ = new VideoEncoder({
-            output: this.handleVideoEncoded.bind(this),
-            error: (error) => {
-                console.error("video encoder error:" + error)
-            }
-        })
+        try {
+            //video encode init
+            console.log('VideoEncoder construct...');
+            this.vencoder_ = new VideoEncoder({
+                output: this.handleVideoEncoded.bind(this),
+                error: (error) => {
+                    console.error("video encoder error:" + error)
+                }
+            })
 
-        if (this.videoCodecType == "h264") {
-            await this.vencoder_.configure({
-                avc: {format: "avc"},
-                codec: 'avc1.42e01f',
-                width: 1280,
-                height: 720,
-                //bitrate: 3000000,
-                hardwareAcceleration: "prefer-hardware",
-                latencyMode: 'realtime',
-            })
-        } else if (this.videoCodecType == "vp8") {
-            await this.vencoder_.configure({
-                codec: 'vp8',
-                width: 1280,
-                height: 720,
-                bitrate: 2000000,
-            })
-        }  else if (this.videoCodecType == "vp9") {
-            await this.vencoder_.configure({
-                codec: 'vp09.00.10.08',
-                width: 1280,
-                height: 720,
-                bitrate: 2000000,
-            })
-        } else {
-            console.error("video codec type error:", this.videoCodecType);
-            return;
+            console.log('VideoEncoder configure type:', this.videoCodecType);
+            if (this.videoCodecType == "h264") {
+                await this.vencoder_.configure({
+                    avc: {format: "avc"},
+                    codec: 'avc1.42e01f',
+                    width: 2560,
+                    height: 1440,
+                    bitrate: 4000000,
+                    hardwareAcceleration: "prefer-hardware",
+                    //latencyMode: 'realtime',
+                })
+            } else if (this.videoCodecType == "vp8") {
+                await this.vencoder_.configure({
+                    codec: 'vp8',
+                    width: 1280,
+                    height: 720,
+                    bitrate: 2000000,
+                })
+            }  else if (this.videoCodecType == "vp9") {
+                await this.vencoder_.configure({
+                    codec: 'vp09.00.10.08',
+                    width: 1280,
+                    height: 720,
+                    bitrate: 2000000,
+                })
+            } else {
+                console.error("video codec type error:", this.videoCodecType);
+                return;
+            }
+
+            //audio encode init
+            console.log('AudioEncoder construct...');
+            this.aencoder_ = new AudioEncoder({
+                output: this.handleAudioEncoded.bind(this),
+                error: (error) => {
+                    console.error("audio encoder error:" + error);
+                }
+            });
+            console.log('AudioEncoder configure...');
+            await this.aencoder_.configure({ codec: this.audioCodecType, numberOfChannels: 1, sampleRate: 48000 });
+
+            //open device: getDisplayMedia
+            console.log('mediaDevices getDisplayMedia...');
+            let stream = null;
+
+            if (shared) {
+                stream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { width: 2560, height: 1440 },
+                });
+            } else {
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+            }
+            
+            //open video device
+            console.log('open video device...');
+            let vprocessor = new MediaStreamTrackProcessor(stream.getVideoTracks()[0]);
+            let vgenerator = new MediaStreamTrackGenerator('video');
+            const vsource = vprocessor.readable;
+            const vsink = vgenerator.writable;
+            let vtransformer = new TransformStream({ transform: this.videoTransform() });
+            vsource.pipeThrough(vtransformer).pipeTo(vsink);
+
+            //open audio device
+            let aprocessor;
+            let agenerator;
+            if (stream.getAudioTracks().length > 0) {
+                console.log('open audio device:', stream.getAudioTracks()[0]);
+                aprocessor = new MediaStreamTrackProcessor(stream.getAudioTracks()[0]);
+                agenerator = new MediaStreamTrackGenerator('audio');
+                const asource = aprocessor.readable;
+                const asink = agenerator.writable;
+                let atransformer = new TransformStream({ transform: this.audioTransform() });
+                asource.pipeThrough(atransformer).pipeTo(asink);    
+            } else {
+                console.log('There is no audio tracks.');
+            }
+
+            console.log('new MediaStream...');
+            let processedStream = new MediaStream();
+            processedStream.addTrack(vgenerator);
+            if (!shared) {
+                processedStream.addTrack(agenerator);
+            }
+
+            console.log('set video element src object....');
+            videoElement.srcObject = processedStream;
+            console.log('video element play....');
+            await videoElement.play();
+            console.log('video element play ok....');
+        } catch (error) {
+            console.log('init exception:', error);
+            throw error
         }
-
-        //audio encode init
-        this.aencoder_ = new AudioEncoder({
-            output: this.handleAudioEncoded.bind(this),
-            error: (error) => {
-                console.error("audio encoder error:" + error);
-            }
-        });
-        await this.aencoder_.configure({ codec: this.audioCodecType, numberOfChannels: 1, sampleRate: 48000 });
-
-        //open device
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
-
-        //open video device
-        let vprocessor = new MediaStreamTrackProcessor(stream.getVideoTracks()[0]);
-        let vgenerator = new MediaStreamTrackGenerator('video');
-        const vsource = vprocessor.readable;
-        const vsink = vgenerator.writable;
-        let vtransformer = new TransformStream({ transform: this.videoTransform() });
-        vsource.pipeThrough(vtransformer).pipeTo(vsink);
-
-        //open audio device
-        let aprocessor = new MediaStreamTrackProcessor(stream.getAudioTracks()[0]);
-        let agenerator = new MediaStreamTrackGenerator('audio');
-        const asource = aprocessor.readable;
-        const asink = agenerator.writable;
-        let atransformer = new TransformStream({ transform: this.audioTransform() });
-        asource.pipeThrough(atransformer).pipeTo(asink);
-
-        let processedStream = new MediaStream();
-        processedStream.addTrack(vgenerator);
-        processedStream.addTrack(agenerator);
-        videoElement.srcObject = processedStream;
-
-        await videoElement.play();
     }
 
     videoTransform(frame, controller) {
@@ -114,7 +148,6 @@ class Encoder {
             this.aencoder_.encode(frame);
             controller.enqueue(frame);
         }
- 
     }
 
     async handleVideoEncoded(chunk, metadata) {

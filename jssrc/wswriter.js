@@ -31,10 +31,10 @@ class WsWriter {
         
         if (uri != "") {
             url = "ws://" + host + "/" + uri;
-            console.log("websocket url:", url);
+            console.log("connecting websocket url:", url);
         } else {
             url = "wss://" + host;
-            console.log("websocket ssl url:", url);
+            console.log("connecting websocket ssl url:", url);
         }
         this.ws = new WebSocket(url);
         /*
