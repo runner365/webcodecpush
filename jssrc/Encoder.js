@@ -5,13 +5,16 @@ class Encoder {
         this.videoElement_ = null;
         this.vencoder_ = null;
         this.aencoder_ = null;
-        this.sendFrames_ = 0;
+        this.videoFrames_ = 0;
+        this.audioFrames_ = 0;
         this.videoGop_ = 60;
         this.videoCodecType = "h264";
         //this.videoCodecType = "vp8";
         //this.videoCodecType = "vp9";
         this.audioCodecType = "opus";
         this.mux = null;
+
+        this._stream = null;
     }
 
     async SetMux(mux) {
@@ -19,7 +22,7 @@ class Encoder {
     }
 
     async Init(videoElement) {
-        let shared = false;
+        let shared = true;
 
         const constraints = {
             video: { width: { exact: 1280 }, height: { exact: 720 }, frameRate: { exact: 15 } },
@@ -82,19 +85,25 @@ class Encoder {
 
             //open device: getDisplayMedia
             console.log('mediaDevices getDisplayMedia...');
-            let stream = null;
 
             if (shared) {
-                stream = await navigator.mediaDevices.getDisplayMedia({
+                this._stream = await navigator.mediaDevices.getDisplayMedia({
                     video: { width: 2560, height: 1440 },
                 });
+                const audioTrack = await navigator.mediaDevices.getUserMedia({audio: {
+                    channelCount:2,
+                    sampleRate:48000,
+                }});
+                if (audioTrack && this._stream) {
+                    this._stream.addTrack(audioTrack.getAudioTracks()[0]);
+                }
             } else {
-                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                this._stream = await navigator.mediaDevices.getUserMedia(constraints);
             }
             
             //open video device
             console.log('open video device...');
-            let vprocessor = new MediaStreamTrackProcessor(stream.getVideoTracks()[0]);
+            let vprocessor = new MediaStreamTrackProcessor(this._stream.getVideoTracks()[0]);
             let vgenerator = new MediaStreamTrackGenerator('video');
             const vsource = vprocessor.readable;
             const vsink = vgenerator.writable;
@@ -104,9 +113,9 @@ class Encoder {
             //open audio device
             let aprocessor;
             let agenerator;
-            if (stream.getAudioTracks().length > 0) {
-                console.log('open audio device:', stream.getAudioTracks()[0]);
-                aprocessor = new MediaStreamTrackProcessor(stream.getAudioTracks()[0]);
+            if (this._stream.getAudioTracks().length > 0) {
+                console.log('open audio device:', this._stream.getAudioTracks()[0]);
+                aprocessor = new MediaStreamTrackProcessor(this._stream.getAudioTracks()[0]);
                 agenerator = new MediaStreamTrackGenerator('audio');
                 const asource = aprocessor.readable;
                 const asink = agenerator.writable;
@@ -119,7 +128,7 @@ class Encoder {
             console.log('new MediaStream...');
             let processedStream = new MediaStream();
             processedStream.addTrack(vgenerator);
-            if (!shared) {
+            if (agenerator) {
                 processedStream.addTrack(agenerator);
             }
 
@@ -136,16 +145,21 @@ class Encoder {
 
     videoTransform(frame, controller) {
         return (frame, controller) => {
-            const insert_keyframe = (this.sendFrames_ % 120) == 0;
-            this.sendFrames_++;
+            const insert_keyframe = (this.videoFrames_ % 120) == 0;
+            this.videoFrames_++;
+
+            //console.log('++++video frame:', frame);
             this.vencoder_.encode(frame, { keyFrame: insert_keyframe });
+            
             controller.enqueue(frame);
         }
     }
 
     audioTransform(frame, controller) {
         return (frame, controller) => {
+            //console.log('----audio frame:', frame, ' audio frame cout:', this.audioFrames_++);
             this.aencoder_.encode(frame);
+            
             controller.enqueue(frame);
         }
     }
