@@ -11,14 +11,23 @@
             <input type="text" id="serverHost" placeholder="hostname:port, eg: localhost:1900" style="width:300px;margin-right:8px;">
             <label for="subpath">SubPath:</label>
             <input type="text" id="subpath" placeholder="live/livestream" style="width:250px;margin-right:8px;">
-            <button id="publishId">publish</button>
+            <button id="connectId">connect</button>
+            <button id="cameraId">Camera</button>
+            <button id="screenId">Screen</button>
+            <button id="disconnectId">disconnect</button>
+            <br/>
+            <label>Camera Position: </label>
+            <button id="lefttop">left top</button>
+            <button id="righttop">right top</button>
+            <button id="leftbottom">left bottom</button>
+            <button id="rightbottom">right bottom</button>
         </div>
         <br/>
         <div id="medialive">
-            publish preview:
+            <label id=previewLabel>publish preview:</label>
             <div id="container">
-                <video id="video_container_publish" playsinline controls autoplay muted width="640" height="480">
-                </video>
+                <canvas id="CanvasMediaId" width="1920" height="1080" style="border:1px solid #000000;">
+                </canvas>
             </div>
         </div>
     </body>

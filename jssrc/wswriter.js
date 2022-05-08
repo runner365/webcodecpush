@@ -15,15 +15,18 @@ function stringToUint8Array(str) {
 
 class WsWriter {
     constructor() {
-        this.connectFlag = false;
+        this._connectFlag = false;
         this.ws = null;
         this.encoder = null;
         this.mux = null;
-        this.videoElement = null;
+        this.canvasElement = null;
+
+        this._host = null;
+        this._uri = null;
     }
 
-    async SetVideoElement(ve) {
-        this.videoElement = ve;
+    async SetCanvasElement(ce) {
+        this.canvasElement = ce;
     }
 
     async Init(host, uri) {
@@ -36,56 +39,92 @@ class WsWriter {
             url = "wss://" + host;
             console.log("connecting websocket ssl url:", url);
         }
-        this.ws = new WebSocket(url);
-        /*
-        this.ws = new WebSocket(url, {
-            protocolVersion: 8,
-            origin: 'https://' + host,
-            rejectUnauthorized: false
-          });
-        */
+
+        this._host = host;
+        this._uri  = uri;
+
+        return new Promise((resolve, reject) => {
+            this.ws = new WebSocket(url);
+
+            this.ws.onopen = () => {
+                console.log("ws client is opened....");
+                this._connectFlag = true;
     
-        this.ws.onopen = () =>
-        {
-            console.log("ws client is opened....");
-            this.connectFlag = true;
+                let uriArray = stringToUint8Array(uri);
+                let total = 1 + 2 + uriArray.byteLength;
+                let uriData = new Uint8Array(total)
+                uriData[0] = 0x02;
+                uriData[1] = (uriArray.byteLength & 0xff00) >> 8;
+                uriData[2] = uriArray.byteLength & 0xff;
+    
+                for (var i = 0; i < uriArray.byteLength; i++) {
+                    uriData[3 + i] = uriArray[i];
+                }
+                console.log("uri array:", uriData);
+                this.Send(uriData);
+    
+                this.mux = new FlvMux();
+                this.mux.SetWriter(this);
+                this.mux.Init(true, false);
+    
+                this.encoder = new Encoder();
+                this.encoder.SetMux(this.mux);
 
-            let uriArray = stringToUint8Array(uri);
-            let total = 1 + 2 + uriArray.byteLength;
-            let uriData = new Uint8Array(total)
-            uriData[0] = 0x02;
-            uriData[1] = (uriArray.byteLength & 0xff00) >> 8;
-            uriData[2] = uriArray.byteLength & 0xff;
+                resolve('open');
+            };
+            this.ws.onmessage = function (evt)  {
+                console.log("ws client received message");
+            };
+             
+            this.ws.onclose = function() {
+                this._connectFlag = false;
+                console.log("ws client closed...");
+                reject('close');
+            };
+        });
+    }
 
-            for (var i = 0; i < uriArray.byteLength; i++) {
-                uriData[3 + i] = uriArray[i];
-            }
-            console.log("uri array:", uriData);
-            this.Send(uriData);
+    OpenCamera(canvasElt) {
+        if (!this._connectFlag) {
+            alert('please connect websocket first');
+            return;
+        }
+        this.canvasElement = canvasElt;
+        this.encoder.InitCamera(this.canvasElement);
+    }
 
-            this.mux = new FlvMux();
-            this.mux.SetWriter(this);
-            this.mux.Init(true, false);
+    OpenScreenShared(canvasElt) {
+        if (!this._connectFlag) {
+            alert('please connect websocket first');
+            return;
+        }
+        this.canvasElement = canvasElt;
+        this.encoder.InitScreen(this.canvasElement);
+    }
 
-            this.encoder = new Encoder();
-            this.encoder.SetMux(this.mux);
-            this.encoder.Init(this.videoElement);
-        };
-        this.ws.onmessage = function (evt) 
-        {
-            console.log("ws client received message");
-        };
-         
-        this.ws.onclose = function()
-        {
-            this.connectFlag = false;
-            console.log("ws client closed...");
-        };
+    UpdateCameraPos(index) {
+        if (this.encoder == null) {
+            alert('please open camera first');
+            return;
+        }
+
+        this.encoder.UpdateCameraPos(index);
+    }
+
+    GetMediaStats() {
+        if (!this._connectFlag) {
+            return null;
+        }
+        if (this.mux == null) {
+            return null;
+        }
+
+        return this.mux.GetMediaStats();
     }
 
     async Send(data) {
-        //console.log("ws write in:", this.connectFlag);
-        if (!this.connectFlag) {
+        //console.log("ws write in:", this._connectFlag);
+        if (!this._connectFlag) {
             return;
         }
         //console.log("send data to ws:", data.byteLength, "data:", data);
@@ -93,8 +132,23 @@ class WsWriter {
         return;
     }
 
-    async close() {
-        
+    async Close() {
+        if (!this._connectFlag) {
+            return;
+        }
+        this._connectFlag = false;
+        this._host = ''
+        this._uri  = ''
+
+        this.encoder.Close();
+        this.encoder = null;
+
+        this.mux.SetWriter(null);
+        this.mux.Close();
+        this.mux = null;
+
+        this.ws.close();
+        this.ws = null;
     }
 }
 module.exports = WsWriter;

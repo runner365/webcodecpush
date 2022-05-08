@@ -13,6 +13,7 @@
         "os": false
     },
     "dependencies": {
+        "awaitqueue": "^2.4.0",
         "events": "^3.3.0"
     },
     "author": "",

@@ -9,6 +9,18 @@ class FlvMux {
     constructor() {
         this.initFlag = false;
         this.Writer = null;
+
+        this._vBytes      = 0;
+        this._aBytes      = 0;
+        this._vLastBytes  = 0;
+        this._aLastBytes  = 0;
+
+        this._vCount      = 0;
+        this._aCount      = 0;
+        this._vLastCount  = 0;
+        this._aLastCount  = 0;
+
+        this._lastStatsTs = 0;
     }
 
     async SetWriter(w) {
@@ -53,9 +65,11 @@ class FlvMux {
         if (media == "video") {
             //11 bytes header | 0x17 00 | 00 00 00 | data[...] | pre tag size
             total = 11 + 2 + 3 + dataSize + 4;
+            //console.log("++++ video timestamp:", timestamp);
         } else if (media == "audio") {
             //11 bytes header | 0xaf 00 | data[...] | pre tag size
             total = 11 + 2 + dataSize + 4;
+            //console.log("---- audio timestamp:", timestamp);
         }
         let tagData = new Uint8Array(total)
         
@@ -144,11 +158,87 @@ class FlvMux {
         tagData[start + 2] = (preSize >> 8) & 0xff;
         tagData[start + 3] = preSize & 0xff;
 
+        if (media == 'video') {
+            this._vBytes += preSize + 4;
+            this._vCount++;
+        } else if (media == 'audio') {
+            this._aBytes += preSize + 4;
+            this._aCount++;
+        }
         await this.output(tagData);
     }
 
     async output(data) {
+        if (this.Writer == null) {
+            return;
+        }
         await this.Writer.Send(data)
+    }
+
+    GetMediaStats() {
+        var vbps = 0;
+        var abps = 0;
+        var vpps = 0;
+        var apps = 0;
+
+        var nowMs = new Date().getTime();
+
+        if (this._lastStatsTs == 0) {
+            this._lastStatsTs = nowMs;
+            this._vLastBytes = this._vBytes;
+            this._aLastBytes = this._aBytes;
+            this._vLastCount = this._vCount;
+            this._aLastCount = this._aCount;
+            return null;
+        }
+
+        let diff = nowMs - this._lastStatsTs;
+        let vDiffBytes = this._vBytes - this._vLastBytes;
+        let aDiffBytes = this._aBytes - this._aLastBytes;
+        let vDiffCount = this._vCount - this._vLastCount;
+        let aDiffCount = this._aCount - this._aLastCount;
+
+        this._lastStatsTs = nowMs;
+        this._vLastBytes = this._vBytes;
+        this._aLastBytes = this._aBytes;
+        this._vLastCount = this._vCount;
+        this._aLastCount = this._aCount;
+        
+        if (diff <= 0) {
+            return null;
+        }
+
+        vbps = vDiffBytes * 8 / (diff/1000.0);
+        abps = aDiffBytes * 8 / (diff/1000.0);
+        vpps = vDiffCount / (diff/1000.0);
+        apps = aDiffCount / (diff/1000.0);
+
+        let stats = {
+            'vkbps': vbps/1000,
+            'akbps': abps/1000,
+            'vpps': vpps,
+            'apps': apps
+        }
+
+        console.log('get mediat stats:', JSON.stringify(stats), ', diff:', diff);
+        return stats;
+    }
+
+    Close() {
+        this.initFlag = false;
+        this.Writer = null;
+
+        this._vBytes      = 0;
+        this._aBytes      = 0;
+        this._vLastBytes  = 0;
+        this._aLastBytes  = 0;
+
+        this._vCount      = 0;
+        this._aCount      = 0;
+        this._vLastCount  = 0;
+        this._aLastCount  = 0;
+
+        this._lastStatsTs = 0;
     }
 }
 

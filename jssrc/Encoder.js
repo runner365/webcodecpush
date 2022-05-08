@@ -1,10 +1,47 @@
 
+const { AwaitQueue } = require('awaitqueue');
+
+var g_canvasElement = null;
+var g_canvasDrawFlag = false;
+var screenImg = null;
+var cameraImg = null;
+var cameraPosX = 0;
+var cameraPosY = 0;
+
+var cameraW = 320;
+var cameraH = 180;
+
+var canvasW = 1920;
+var canvasH = 1080;
+
+function DrawAll(flag) {
+    if (g_canvasElement == null) {
+        return;
+    }
+    var ctx = g_canvasElement.getContext('2d');
+
+    ctx.rect(0, 0, canvasW, canvasH);
+    ctx.fillStyle = 'Purple';
+    ctx.fill();
+
+    if (screenImg) {
+        ctx.drawImage(screenImg, 0, 0, canvasW, canvasH);
+    }
+
+    if (cameraImg) {
+        ctx.drawImage(cameraImg, cameraPosX, cameraPosY);
+    }
+    if (flag) {
+        setTimeout(DrawAll, 1000 / 15.0, true);
+    }
+}
 
 class Encoder {
     constructor() {
         this.videoElement_ = null;
         this.vencoder_ = null;
         this.aencoder_ = null;
+        this.aFrameCount_ = 0;
         this.videoFrames_ = 0;
         this.audioFrames_ = 0;
         this.videoGop_ = 60;
@@ -14,24 +51,93 @@ class Encoder {
         this.audioCodecType = "opus";
         this.mux = null;
 
-        this._stream = null;
+        this._cameraStream = null;
+        this._screenStream = null;
+        this._canvasStream = null;
+
+        this._vprocessor = null;
+        this._vgenerator = null;
+        this._vtransformer = null;
+
+        this._aprocessor = null;
+        this._agenerator = null;
+        this._atransformer = null;
+
+        this._audioChunkTs = 0;
+        this._videoChunkTs = 0;
+
+        this._videoTs = 0;
+        this._audioTs = 0;
+
+        this._queue = new AwaitQueue();
     }
 
     async SetMux(mux) {
         this.mux = mux;
     }
 
-    async Init(videoElement) {
-        let shared = true;
-
-        const constraints = {
-            video: { width: { exact: 1280 }, height: { exact: 720 }, frameRate: { exact: 15 } },
-            audio: {
-                channelCount:2,
-                sampleRate:48000,
-            }
+    Close() {
+        console.log('encode close...');
+        for (const videoTrack of this._canvasStream.getVideoTracks()) {
+            videoTrack.stop();
         }
+        for (const audioTrack of this._canvasStream.getAudioTracks()) {
+            audioTrack.stop();
+        }
+        g_canvasDrawFlag = false;
+        screenImg = null;
+        cameraImg = null;
+        cameraPosX = 0;
+        cameraPosY = 0;
 
+        this.videoElement_ = null;
+        this.vencoder_ = null;
+        this.aencoder_ = null;
+        this.aFrameCount_ = 0;
+        this.videoFrames_ = 0;
+        this.audioFrames_ = 0;
+        this.videoGop_ = 60;
+        this.videoCodecType = "h264";
+        this.audioCodecType = "opus";
+        this.mux = null;
+
+        this._cameraStream = null;
+        this._screenStream = null;
+        this._canvasStream = null;
+
+        this._vtransformer = null;
+        this._atransformer = null;
+
+        this._vprocessor = null;
+        this._vgenerator = null;
+        this._vtransformer = null;
+
+        this._aprocessor = null;
+        this._agenerator = null;
+        this._atransformer = null;
+
+        this._audioChunkTs = 0;
+        this._videoChunkTs = 0;
+
+        this._videoTs = 0;
+        this._audioTs = 0;
+
+        if (g_canvasElement) {
+            var ctx = g_canvasElement.getContext('2d');
+            if (ctx) {
+                ctx.rect(0, 0, canvasW, canvasH);
+                ctx.fillStyle = 'White';
+                ctx.fill();
+            }
+            g_canvasElement = null;
+        }
+    }
+
+    async InitCodecs() {
+        if (this.vencoder_ || this.aencoder_) {
+            console.log('video and audio codec have been inited...');
+            return;
+        }
         try {
             //video encode init
             console.log('VideoEncoder construct...');
@@ -47,24 +153,24 @@ class Encoder {
                 await this.vencoder_.configure({
                     avc: {format: "avc"},
                     codec: 'avc1.42e01f',
-                    width: 2560,
-                    height: 1440,
-                    bitrate: 4000000,
+                    width: canvasW,
+                    height: canvasH,
+                    bitrate: 2000000,
                     hardwareAcceleration: "prefer-hardware",
                     //latencyMode: 'realtime',
                 })
             } else if (this.videoCodecType == "vp8") {
                 await this.vencoder_.configure({
                     codec: 'vp8',
-                    width: 1280,
-                    height: 720,
+                    width: canvasW,
+                    height: canvasH,
                     bitrate: 2000000,
                 })
             }  else if (this.videoCodecType == "vp9") {
                 await this.vencoder_.configure({
                     codec: 'vp09.00.10.08',
-                    width: 1280,
-                    height: 720,
+                    width: canvasW,
+                    height: canvasH,
                     bitrate: 2000000,
                 })
             } else {
@@ -80,135 +186,311 @@ class Encoder {
                     console.error("audio encoder error:" + error);
                 }
             });
-            console.log('AudioEncoder configure...');
             await this.aencoder_.configure({ codec: this.audioCodecType, numberOfChannels: 1, sampleRate: 48000 });
+        } catch (error) {
+            console.log('codec init exception:', error);
+        }
+    }
 
-            //open device: getDisplayMedia
-            console.log('mediaDevices getDisplayMedia...');
+    async InitScreen(canvasElement) {
+        var screenElement = null;
+        g_canvasElement = canvasElement;
+        g_canvasDrawFlag = true;
+        try {
+            this._screenStream = await navigator.mediaDevices.getDisplayMedia({
+                video: { width: canvasW, height: canvasH },
+            });
+            console.log('set video element src object....');
 
-            if (shared) {
-                this._stream = await navigator.mediaDevices.getDisplayMedia({
-                    video: { width: 2560, height: 1440 },
-                });
-                const audioTrack = await navigator.mediaDevices.getUserMedia({audio: {
-                    channelCount:2,
-                    sampleRate:48000,
-                }});
-                if (audioTrack && this._stream) {
-                    this._stream.addTrack(audioTrack.getAudioTracks()[0]);
-                }
-            } else {
-                this._stream = await navigator.mediaDevices.getUserMedia(constraints);
+            screenElement = document.getElementById('videoScreenId');
+            if (screenElement == null) {
+                screenElement = document.createElement("video");
+                screenElement = document.createElement("video");
+                screenElement.id = 'videoScreenId';
+                screenElement.className = 'videoView';
+                screenElement.setAttribute("playsinline", "playsinline");
+                screenElement.setAttribute("autoplay", "autoplay");
+                screenElement.setAttribute("loop", "loop");
+                screenElement.setAttribute("controls", "controls");
+                screenElement.srcObject    = this._screenStream;
+                screenElement.style.width  = canvasW;
+                screenElement.style.height = canvasH;
             }
             
-            //open video device
-            console.log('open video device...');
-            let vprocessor = new MediaStreamTrackProcessor(this._stream.getVideoTracks()[0]);
-            let vgenerator = new MediaStreamTrackGenerator('video');
-            const vsource = vprocessor.readable;
-            const vsink = vgenerator.writable;
-            let vtransformer = new TransformStream({ transform: this.videoTransform() });
-            vsource.pipeThrough(vtransformer).pipeTo(vsink);
+            screenElement.addEventListener('play', function () {
+                screenImg = this;
+                DrawAll(true);
+            }, 0);
 
-            //open audio device
-            let aprocessor;
-            let agenerator;
-            if (this._stream.getAudioTracks().length > 0) {
-                console.log('open audio device:', this._stream.getAudioTracks()[0]);
-                aprocessor = new MediaStreamTrackProcessor(this._stream.getAudioTracks()[0]);
-                agenerator = new MediaStreamTrackGenerator('audio');
-                const asource = aprocessor.readable;
-                const asink = agenerator.writable;
-                let atransformer = new TransformStream({ transform: this.audioTransform() });
-                asource.pipeThrough(atransformer).pipeTo(asink);    
-            } else {
-                console.log('There is no audio tracks.');
-            }
+            this.InitCodecs();
+            this.initCanvasStream(canvasElement);
 
-            console.log('new MediaStream...');
-            let processedStream = new MediaStream();
-            processedStream.addTrack(vgenerator);
-            if (agenerator) {
-                processedStream.addTrack(agenerator);
+            console.log('screen element play....');
+            await screenElement.play();
+        } catch (error) {
+            console.log("init screen exception:", error);   
+        }
+    }
+
+    async InitCamera(canvasElement) {
+        if (this._cameraStream) {
+            return;
+        }
+        g_canvasElement = canvasElement;
+        const constraints = {
+            video: { width: { exact: cameraW }, height: { exact: cameraH }, frameRate: { exact: 15 } },
+            audio: {
+                channelCount:2,
+                sampleRate:48000,
             }
+        }
+
+        try {
+            console.log('open camera constraints:', JSON.stringify(constraints));
+            this._cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
 
             console.log('set video element src object....');
-            videoElement.srcObject = processedStream;
+            var videoElement = document.createElement("video");
+            videoElement.id = 'videoCameraId';
+            videoElement.className = 'videoView';
+            videoElement.setAttribute("playsinline", "playsinline");
+            videoElement.setAttribute("autoplay", "autoplay");
+            videoElement.setAttribute("loop", "loop");
+            videoElement.setAttribute("controls", "controls");
+            videoElement.srcObject    = this._cameraStream;
+            videoElement.style.width  = cameraW;
+            videoElement.style.height = cameraH;
+            
+            videoElement.addEventListener('play', function () {
+                cameraImg = this;
+            }, 0);
+
+            this.InitCodecs();
+            this.initCanvasStream(canvasElement);
+
             console.log('video element play....');
             await videoElement.play();
-            console.log('video element play ok....');
         } catch (error) {
             console.log('init exception:', error);
             throw error
         }
     }
 
+    initCanvasStream(canvasElement) {
+        if (this._canvasStream) {
+            return;
+        }
+        this._canvasStream = canvasElement.captureStream(15);
+
+        //open video device
+        console.log('open video device for canvas stream');
+        this._vprocessor = new MediaStreamTrackProcessor(this._canvasStream.getVideoTracks()[0]);
+        this._vgenerator = new MediaStreamTrackGenerator('video');
+        const vsource = this._vprocessor.readable;
+        const vsink = this._vgenerator.writable;
+        this._vtransformer = new TransformStream({ transform: this.videoTransform() });
+        vsource.pipeThrough(this._vtransformer).pipeTo(vsink);
+
+        //open audio device
+        if (this._canvasStream.getAudioTracks().length > 0) {
+            console.log('open audio device:', this._canvasStream.getAudioTracks()[0], ' for canvas stream');
+            this._aprocessor = new MediaStreamTrackProcessor(this._canvasStream.getAudioTracks()[0]);
+            this._agenerator = new MediaStreamTrackGenerator('audio');
+            const asource = this._aprocessor.readable;
+            const asink = this._agenerator.writable;
+            this._atransformer = new TransformStream({ transform: this.audioTransform() });
+            asource.pipeThrough(this._atransformer).pipeTo(asink);    
+        } else {
+            if (this._cameraStream.getAudioTracks() && this._cameraStream.getAudioTracks().length > 0) {
+                this._canvasStream.addTrack(this._cameraStream.getAudioTracks()[0]);
+                console.log('add camera audio in canvas...');
+
+                this._aprocessor = new MediaStreamTrackProcessor(this._canvasStream.getAudioTracks()[0]);
+                this._agenerator = new MediaStreamTrackGenerator('audio');
+                const asource = this._aprocessor.readable;
+                const asink = this._agenerator.writable;
+                this._atransformer = new TransformStream({ transform: this.audioTransform() });
+                asource.pipeThrough(this._atransformer).pipeTo(asink);   
+            } else {
+                console.log('There is no audio tracks.');
+            }
+        }
+        return;
+    }
+
+    UpdateCameraPos(index) {
+        switch (index) {
+            case 0://left top
+            {
+                cameraPosX = 0;
+                cameraPosY = 0;
+                break;
+            }
+            case 1://right top
+            {
+                cameraPosX = canvasW - cameraW;
+                cameraPosY = 0;
+                break;
+            }
+            case 2://left bottom
+            {
+                cameraPosX = 0;
+                cameraPosY = canvasH - cameraH;
+                break;
+            }
+            case 3://right bottom
+            {
+                cameraPosX = canvasW - cameraW;
+                cameraPosY = canvasH - cameraH;
+                break;
+            }
+            default:
+                break;
+        }
+        console.log('update camera pos index:', index, ", w:", cameraPosX, ", h:", cameraPosY);
+    }
+
     videoTransform(frame, controller) {
         return (frame, controller) => {
-            const insert_keyframe = (this.videoFrames_ % 120) == 0;
+            const insert_keyframe = (this.videoFrames_ % 60) == 0;
             this.videoFrames_++;
 
-            //console.log('++++video frame:', frame);
-            this.vencoder_.encode(frame, { keyFrame: insert_keyframe });
-            
-            controller.enqueue(frame);
+            try {
+                this.vencoder_.encode(frame, { keyFrame: insert_keyframe });
+                controller.enqueue(frame);
+            } catch (error) {
+                console.log("video encode exception:", error);
+            }
         }
     }
 
     audioTransform(frame, controller) {
         return (frame, controller) => {
-            //console.log('----audio frame:', frame, ' audio frame cout:', this.audioFrames_++);
-            this.aencoder_.encode(frame);
-            
-            controller.enqueue(frame);
+            var debug = false;
+            try {
+                if ((this.aFrameCount_++ % 10) == 0) {
+                    var canvas = document.getElementById("CanvasMediaId");
+                    var ctx = canvas.getContext("2d");
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(1,0);
+                    ctx.lineTo(1, 100);
+                    ctx.stroke();
+                    DrawAll(false);
+                }
+                if (debug) {
+                    return;
+                }
+                this.aencoder_.encode(frame);
+                controller.enqueue(frame);
+            } catch (error) {
+                console.log("audio encode exception:", error);
+            }
+
         }
     }
 
     async handleVideoEncoded(chunk, metadata) {
-        if ((chunk == null) || (chunk.byteLength <= 0)) {
-            return;
-        }
-        // actual bytes of encoded data
-        let chunkData = new Uint8Array(chunk.byteLength);
-        chunk.copyTo(chunkData);
-
-        let ts = chunk.timestamp/1000;
-
-        if (metadata.decoderConfig) {
-            //todo:
-            let avcSeqHdr = metadata.decoderConfig.description;
-            //console.log("avc seq hdr:", avcSeqHdr, "data:", data);
-            if ((avcSeqHdr != null) && (avcSeqHdr.byteLength > 0)) {
-                this.mux.DoMux({media:"video", codecType: this.videoCodecType,
-                        timestamp:ts, data:avcSeqHdr, isSeq:true, isKey:false});
+        let ts = 0;
+        try {
+            if ((chunk == null) || (chunk.byteLength <= 0)) {
+                return;
             }
-        }
+    
+            let chunkData = new Uint8Array(chunk.byteLength);
+            chunk.copyTo(chunkData);
 
-        let isKey = chunk.type == 'key';
+            if (this._videoChunkTs == 0) {
+                ts = 0;
+                this._videoChunkTs = chunk.timestamp;
+            } else {
+                let diff = chunk.timestamp - this._videoChunkTs;
+                this._videoChunkTs = chunk.timestamp;
+                this._videoTs += diff;
+                ts = this._videoTs/1000;
+            }
+    
+            if (metadata.decoderConfig) {
+                //todo:
+                let avcSeqHdr = metadata.decoderConfig.description;
+                //console.log("avc seq hdr:", avcSeqHdr, "data:", data);
+                if ((avcSeqHdr != null) && (avcSeqHdr.byteLength > 0)) {
+                    this._queue.push(async () => {
+                        if (this.mux == null) {
+                            return;
+                        }
+                        this.mux.DoMux({media:"video", codecType: this.videoCodecType,
+                        timestamp:ts, data:avcSeqHdr, isSeq:true, isKey:false});
+                    }).catch((error) => {
+                        console.log('room creation or room joining failed:', error);
+                    });
+                }
+            }
+    
+            let isKey = chunk.type == 'key';
 
-        this.mux.DoMux({media:"video", codecType: this.videoCodecType,
+            this._queue.push(async () => {
+                if (this.mux == null) {
+                    return;
+                }
+                this.mux.DoMux({media:"video", codecType: this.videoCodecType,
                 timestamp:ts, data:chunkData, isSeq:false, isKey});
+            }).catch((error) => {
+                console.log('room creation or room joining failed:', error);
+            });
+        } catch (error) {
+            console.log('video encode exception:', error);
+        }
     }
 
     async handleAudioEncoded(chunk, metadata) {
-        if ((chunk == null) || (chunk.byteLength <= 0)) {
-            return;
+        let ts = 0;
+
+        try {
+            if ((chunk == null) || (chunk.byteLength <= 0)) {
+                return;
+            }
+            // actual bytes of encoded data
+            let chunkData = new Uint8Array(chunk.byteLength);
+            chunk.copyTo(chunkData);
+
+            if (this._audioChunkTs == 0) {
+                ts = 0;
+                this._audioChunkTs = chunk.timestamp;
+            } else {
+                let diff = chunk.timestamp - this._audioChunkTs;
+                this._audioChunkTs = chunk.timestamp;
+                this._audioTs += diff;
+                ts = this._audioTs/1000;
+            }
+
+            if (metadata.decoderConfig) {
+                //todo:
+                let audioSeqHdr = metadata.decoderConfig.description;
+
+                this._queue.push(async () => {
+                    if (this.mux == null) {
+                        return;
+                    }
+                    this.mux.DoMux({media:"audio", codecType: this.audioCodecType,
+                                timestamp:ts, data:audioSeqHdr, isSeq:true, isKey:false});
+                }).catch((error) => {
+                    console.log('room creation or room joining failed:%o', error);
+                });
+            }
+
+            this._queue.push(async () => {
+                if (this.mux == null) {
+                    return;
+                }
+                this.mux.DoMux({media:"audio", codecType: this.audioCodecType,
+                            timestamp:ts, data:chunkData, isSeq:false, isKey:false});
+            }).catch((error) => {
+                console.log('room creation or room joining failed:%o', error);
+            });
+        } catch (error) {
+            console.log("audio encode exception:", error);
         }
-        // actual bytes of encoded data
-        let chunkData = new Uint8Array(chunk.byteLength);
-        chunk.copyTo(chunkData);
-
-        let ts = chunk.timestamp/1000;
-
-        if (metadata.decoderConfig) {
-            //todo:
-            let audioSeqHdr = metadata.decoderConfig.description;
-            this.mux.DoMux({media:"audio", codecType: this.audioCodecType,
-                    timestamp:ts, data:audioSeqHdr, isSeq:true, isKey:false});
-        }
-
-        this.mux.DoMux({media:"audio", codecType: this.audioCodecType,
-                    timestamp:ts, data:chunkData, isSeq:false, isKey:false});
     }
 }
 
