@@ -32,7 +32,7 @@ async function websocketConnect() {
         wsClient = new WsWriter();
 
         wsClient.SetCanvasElement(canvasElement);
-        console.log("websocket url:", "ws://" + serverHost + "/" + subpath + ".flv")
+        console.log("websocket url:", "wss://" + serverHost + "/" + subpath + ".flv")
         let ret = await wsClient.Init(serverHost, subpath + ".flv");
 
         console.log("wsClient init return:", ret);

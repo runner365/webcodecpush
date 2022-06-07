@@ -54,20 +54,28 @@ class Encoder {
         this._cameraStream = null;
         this._screenStream = null;
         this._canvasStream = null;
+        
+        this._cameraAudioInit = false;
+        this._screenAudioInit = false;
 
         this._vprocessor = null;
         this._vgenerator = null;
         this._vtransformer = null;
 
-        this._aprocessor = null;
-        this._agenerator = null;
-        this._atransformer = null;
+        this._aProcessor   = null;
+        this._aGenerator   = null;
+        this._aTransformer = null;
 
         this._audioChunkTs = 0;
         this._videoChunkTs = 0;
 
         this._videoTs = 0;
         this._audioTs = 0;
+
+        this._audioCtx = null;
+        this._screenSource = null;
+        this._cameraSource = null;
+        this._destNode = null;
 
         this._queue = new AwaitQueue();
     }
@@ -105,16 +113,13 @@ class Encoder {
         this._screenStream = null;
         this._canvasStream = null;
 
-        this._vtransformer = null;
-        this._atransformer = null;
-
         this._vprocessor = null;
         this._vgenerator = null;
         this._vtransformer = null;
 
-        this._aprocessor = null;
-        this._agenerator = null;
-        this._atransformer = null;
+        this._aProcessor   = null;
+        this._aGenerator   = null;
+        this._aTransformer = null;
 
         this._audioChunkTs = 0;
         this._videoChunkTs = 0;
@@ -186,7 +191,7 @@ class Encoder {
                     console.error("audio encoder error:" + error);
                 }
             });
-            await this.aencoder_.configure({ codec: this.audioCodecType, numberOfChannels: 1, sampleRate: 48000 });
+            await this.aencoder_.configure({ codec: this.audioCodecType, numberOfChannels: 2, sampleRate: 48000 });
         } catch (error) {
             console.log('codec init exception:', error);
         }
@@ -199,8 +204,12 @@ class Encoder {
         try {
             this._screenStream = await navigator.mediaDevices.getDisplayMedia({
                 video: { width: canvasW, height: canvasH },
+                audio: true,
             });
             console.log('set video element src object....');
+            if (this._screenStream.getAudioTracks()) {
+                console.log('screen audio tracks:', this._screenStream.getAudioTracks().length);
+            }
 
             screenElement = document.getElementById('videoScreenId');
             if (screenElement == null) {
@@ -217,28 +226,36 @@ class Encoder {
                 screenElement.style.height = canvasH;
             }
             
-            screenElement.addEventListener('play', function () {
-                screenImg = this;
-                DrawAll(true);
-            }, 0);
-
-            this.InitCodecs();
-            this.initCanvasStream(canvasElement);
-
             console.log('screen element play....');
-            await screenElement.play();
+            screenElement.play();
+            await this.screenPlay(screenElement);
+
+            await this.InitCodecs();
+            this.initCanvasStream(g_canvasElement);
         } catch (error) {
             console.log("init screen exception:", error);   
         }
     }
 
+    async screenPlay(screenElement) {
+        return new Promise((resolve, reject) => {
+            screenElement.addEventListener('play', function() {
+                screenImg = this;
+                DrawAll(true);
+                console.log('screen play is ready......');
+                resolve(true)
+            }, 0);
+        })
+    }
+
     async InitCamera(canvasElement) {
         if (this._cameraStream) {
+            alert("can't open camera again");
             return;
         }
         g_canvasElement = canvasElement;
         const constraints = {
-            video: { width: { exact: cameraW }, height: { exact: cameraH }, frameRate: { exact: 15 } },
+            video: { width: { exact: cameraW }, height: { exact: cameraH }, frameRate: { exact: 30 }, frameRate: { exact: 30 } },
             audio: {
                 channelCount:2,
                 sampleRate:48000,
@@ -260,27 +277,103 @@ class Encoder {
             videoElement.srcObject    = this._cameraStream;
             videoElement.style.width  = cameraW;
             videoElement.style.height = cameraH;
-            
-            videoElement.addEventListener('play', function () {
-                cameraImg = this;
-            }, 0);
-
-            this.InitCodecs();
-            this.initCanvasStream(canvasElement);
 
             console.log('video element play....');
-            await videoElement.play();
+            videoElement.play();
+
+            await this.cameraPlay(videoElement);
+
+            await this.InitCodecs();
+            this.initCanvasStream(g_canvasElement);
+
         } catch (error) {
             console.log('init exception:', error);
             throw error
         }
     }
 
+    async cameraPlay(cameraElement) {
+        return new Promise((resolve, reject) => {
+            cameraElement.addEventListener('play', function() {
+                cameraImg = this;
+                console.log('camera play is ready, cameraImg:', cameraImg);
+                DrawAll(true);
+                resolve(true)
+            }, 0);
+        })
+    }
+
+    initCanvasAudio() {
+        if (this._audioCtx) {
+            this._audioCtx.close();
+            this._audioCtx = new AudioContext({
+                latencyHint: 'interactive',
+                sampleRate: 48000,
+              });
+              this._destNode     = null;
+              this._aProcessor   = null;
+              this._aGenerator   = null;
+              this._aTransformer = null;
+              this._screenSource = null;
+              this._cameraSource = null;
+        } else {
+            this._audioCtx = new AudioContext({
+                latencyHint: 'interactive',
+                sampleRate: 48000,
+              });
+        }
+
+        //open screen audio device
+        if ((this._screenStream != null) && (this._screenStream.getAudioTracks().length > 0)) {
+            console.log('open screen audio device:', this._screenStream.getAudioTracks()[0], ' for canvas stream');
+            //this._canvasStream.addTrack(this._screenStream.getAudioTracks()[0]);
+            this._screenSource = this._audioCtx.createMediaStreamSource(this._screenStream);
+
+            if (this._destNode == null) {
+                this._destNode = this._audioCtx.createMediaStreamDestination();
+                this._screenSource.connect(this._destNode);
+                console.log("screen dest node voice tracks:", this._destNode.stream.getAudioTracks().length);
+                this._aProcessor = new MediaStreamTrackProcessor(this._destNode.stream.getAudioTracks()[0]);
+                this._aGenerator = new MediaStreamTrackGenerator('audio');
+                const asource = this._aProcessor.readable;
+                const asink = this._aGenerator.writable;
+                this._aTransformer = new TransformStream({ transform: this.audioTransform() });
+                asource.pipeThrough(this._aTransformer).pipeTo(asink);  
+                
+            } else {
+                this._screenSource.connect(this._destNode);
+            }
+        }
+        
+        //open camera audio device
+        if ((this._cameraStream != null) && (this._cameraStream.getAudioTracks().length > 0)) {
+            //this._canvasStream.addTrack(this._cameraStream.getAudioTracks()[0]);
+            console.log('add camera audio in canvas...');
+
+            this._cameraSource = this._audioCtx.createMediaStreamSource(this._cameraStream);
+            if (this._destNode == null) {
+                this._destNode = this._audioCtx.createMediaStreamDestination();
+                this._cameraSource.connect(this._destNode); 
+                console.log("camera dest node voice tracks:", this._destNode.stream.getAudioTracks().length);
+                this._aProcessor = new MediaStreamTrackProcessor(this._destNode.stream.getAudioTracks()[0]);
+                this._aGenerator = new MediaStreamTrackGenerator('audio');
+                const asource = this._aProcessor.readable;
+                const asink = this._aGenerator.writable;
+                this._aTransformer = new TransformStream({ transform: this.audioTransform() });
+                asource.pipeThrough(this._aTransformer).pipeTo(asink);  
+            } else {
+                this._cameraSource.connect(this._destNode);
+            }
+            
+        }
+    }
+
     initCanvasStream(canvasElement) {
         if (this._canvasStream) {
+            this.initCanvasAudio();
             return;
         }
-        this._canvasStream = canvasElement.captureStream(15);
+        this._canvasStream = canvasElement.captureStream(30);
 
         //open video device
         console.log('open video device for canvas stream');
@@ -291,30 +384,8 @@ class Encoder {
         this._vtransformer = new TransformStream({ transform: this.videoTransform() });
         vsource.pipeThrough(this._vtransformer).pipeTo(vsink);
 
-        //open audio device
-        if (this._canvasStream.getAudioTracks().length > 0) {
-            console.log('open audio device:', this._canvasStream.getAudioTracks()[0], ' for canvas stream');
-            this._aprocessor = new MediaStreamTrackProcessor(this._canvasStream.getAudioTracks()[0]);
-            this._agenerator = new MediaStreamTrackGenerator('audio');
-            const asource = this._aprocessor.readable;
-            const asink = this._agenerator.writable;
-            this._atransformer = new TransformStream({ transform: this.audioTransform() });
-            asource.pipeThrough(this._atransformer).pipeTo(asink);    
-        } else {
-            if (this._cameraStream.getAudioTracks() && this._cameraStream.getAudioTracks().length > 0) {
-                this._canvasStream.addTrack(this._cameraStream.getAudioTracks()[0]);
-                console.log('add camera audio in canvas...');
+        this.initCanvasAudio();
 
-                this._aprocessor = new MediaStreamTrackProcessor(this._canvasStream.getAudioTracks()[0]);
-                this._agenerator = new MediaStreamTrackGenerator('audio');
-                const asource = this._aprocessor.readable;
-                const asink = this._agenerator.writable;
-                this._atransformer = new TransformStream({ transform: this.audioTransform() });
-                asource.pipeThrough(this._atransformer).pipeTo(asink);   
-            } else {
-                console.log('There is no audio tracks.');
-            }
-        }
         return;
     }
 
@@ -366,7 +437,6 @@ class Encoder {
 
     audioTransform(frame, controller) {
         return (frame, controller) => {
-            var debug = false;
             try {
                 if ((this.aFrameCount_++ % 10) == 0) {
                     var canvas = document.getElementById("CanvasMediaId");
@@ -378,9 +448,7 @@ class Encoder {
                     ctx.stroke();
                     DrawAll(false);
                 }
-                if (debug) {
-                    return;
-                }
+
                 this.aencoder_.encode(frame);
                 controller.enqueue(frame);
             } catch (error) {

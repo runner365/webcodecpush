@@ -220,7 +220,7 @@ class FlvMux {
             'apps': apps
         }
 
-        console.log('get mediat stats:', JSON.stringify(stats), ', diff:', diff);
+        //console.log('get mediat stats:', JSON.stringify(stats), ', diff:', diff);
         return stats;
     }
 

@@ -33,7 +33,7 @@ class WsWriter {
         let url = "";
         
         if (uri != "") {
-            url = "ws://" + host + "/" + uri;
+            url = "wss://" + host + "/" + uri;
             console.log("connecting websocket url:", url);
         } else {
             url = "wss://" + host;
