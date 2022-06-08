@@ -11,8 +11,8 @@ var cameraPosY = 0;
 var cameraW = 320;
 var cameraH = 180;
 
-var canvasW = 1920;
-var canvasH = 1080;
+var canvasW = 1280;
+var canvasH = 720;
 
 function DrawAll(flag) {
     if (g_canvasElement == null) {

@@ -1,6 +1,8 @@
 const WsWriter  = require('./WsWriter');
 
 let wsClient = null;
+let hostUrl = 'localhost';
+let subPath = '';
 
 function GetMediaStats() {
     if (wsClient == null) {
@@ -13,12 +15,31 @@ function GetMediaStats() {
     let statsText = 'video kbps:' + parseInt(stats['vkbps']) + ', audio kbps:' + parseInt(stats['akbps']);
     statsText += ', video pps:' + parseInt(stats['vpps']) + ', audio pps:' + parseInt(stats['apps']);
 
+    document.getElementById('playurlLabel').innerText = 'play url: ' + 'rtmp://' + hostUrl + '/' + subPath;
     document.getElementById('previewLabel').innerText = 'publish preview: [ ' + statsText + ' ]';
 }
 
+function randomNum(minNum,maxNum){
+    switch(arguments.length){
+        case 1:
+            return parseInt(Math.random()*minNum+1,10);
+        break;
+        case 2:
+            return parseInt(Math.random()*(maxNum-minNum+1)+minNum,10);
+        default:
+            return 0;
+        break;
+    }
+}
+
 function windowInit() {
-    document.getElementById('serverHost').value = "localhost:12000";
-    document.getElementById('subpath').value = "live/livestream";
+    var num = randomNum(100000, 999999);
+    var streamName = num.toString();
+
+    subPath = "live/" + streamName;
+
+    document.getElementById('serverHost').value = hostUrl + ":12000";
+    document.getElementById('subpath').value = subPath;
 
     setInterval(GetMediaStats, 5000);
 }
@@ -48,6 +69,8 @@ async function websocketDisconnect() {
         return;
     }
     wsClient.Close();
+    wsClient = null;
+
     return;
 }
 

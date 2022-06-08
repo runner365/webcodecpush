@@ -131,7 +131,7 @@ class FlvMux {
             }
             tagData[13] = 0x00;
             tagData[14] = 0x00;
-            tagData[15] = 0x00;
+            tagData[15] = 0x28;
             start = 11 + 5;
             preSize = 11 + 5 + data.byteLength;
         } else if (media == "audio") {
