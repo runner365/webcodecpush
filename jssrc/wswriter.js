@@ -1,7 +1,6 @@
-// import FlvMux from './FlvMux';
-// import Encoder from './Encoder';
-const FlvMux  = require('./FlvMux');
-const Encoder  = require('./Encoder');
+const BaseWriter = require('./BaseWriter');
+const FlvMux     = require('./FlvMux');
+const Encoder    = require('./Encoder');
 
 function stringToUint8Array(str) {
     var arr = [];
@@ -13,32 +12,20 @@ function stringToUint8Array(str) {
     return tmpUint8Array
 }
 
-class WsWriter {
+class WsWriter extends BaseWriter {
     constructor() {
-        this._connectFlag = false;
+        super();
         this.ws = null;
-        this.encoder = null;
-        this.mux = null;
-        this.canvasElement = null;
-
-        this._host = null;
-        this._uri = null;
-
-        this._cameraOpen = false;
-    }
-
-    async SetCanvasElement(ce) {
-        this.canvasElement = ce;
     }
 
     async Init(host, uri) {
         let url = "";
         
         if (uri != "") {
-            url = "wss://" + host + "/" + uri;
+            url = "ws://" + host + "/" + uri;
             console.log("connecting websocket url:", url);
         } else {
-            url = "wss://" + host;
+            url = "ws://" + host;
             console.log("connecting websocket ssl url:", url);
         }
 
@@ -71,50 +58,6 @@ class WsWriter {
                 reject('close');
             };
         });
-    }
-
-    OpenCamera(canvasElt) {
-        if (!this._connectFlag) {
-            alert('please connect websocket first');
-            return;
-        }
-        this.canvasElement = canvasElt;
-        this.encoder.InitCamera(this.canvasElement);
-
-        this._cameraOpen = true;
-    }
-
-    OpenScreenShared(canvasElt) {
-        if (!this._connectFlag) {
-            alert('please connect websocket first');
-            return;
-        }
-        if (!this._cameraOpen) {
-            alert('please open camera first');
-            return;
-        }
-        this.canvasElement = canvasElt;
-        this.encoder.InitScreen(this.canvasElement);
-    }
-
-    UpdateCameraPos(index) {
-        if (this.encoder == null) {
-            alert('please open camera first');
-            return;
-        }
-
-        this.encoder.UpdateCameraPos(index);
-    }
-
-    GetMediaStats() {
-        if (!this._connectFlag) {
-            return null;
-        }
-        if (this.mux == null) {
-            return null;
-        }
-
-        return this.mux.GetMediaStats();
     }
 
     async Send(data) {

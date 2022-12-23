@@ -1,7 +1,8 @@
 const WsWriter  = require('./WsWriter');
+const Http3Writer  = require('./Http3Writer');
 
 let wsClient = null;
-let hostUrl = 'localhost';
+let hostUrl = '172.28.202.87';
 let subPath = '';
 
 function GetMediaStats() {
@@ -53,7 +54,7 @@ async function websocketConnect() {
         wsClient = new WsWriter();
 
         wsClient.SetCanvasElement(canvasElement);
-        console.log("websocket url:", "wss://" + serverHost + "/" + subpath + ".flv")
+        console.log("websocket url:", "ws://" + serverHost + "/" + subpath + ".flv")
         let ret = await wsClient.Init(serverHost, subpath + ".flv");
 
         console.log("wsClient init return:", ret);
@@ -102,7 +103,23 @@ async function openScreenShared() {
     }
 }
 
-document.getElementById('connectId').addEventListener('click', ()=>{
+async function webtransportConnect() {
+    let transport = new WebTransport('https://rtc4.cerceimedia.kuaishou.com:4433/wt');
+    await transport.ready;
+  
+    let stream = await transport.createBidirectionalStream();
+    let reader = stream.readable.getReader();
+    let writer = stream.writable.getWriter();
+  
+    await writer.write(new Uint8Array([61, 66, 67]));
+    let received = await reader.read();
+    await transport.close();
+  
+    console.log('received', received);
+}
+
+document.getElementById('connectId').addEventListener('click', async ()=>{
+    //await webtransportConnect();
     websocketConnect()
 })
 

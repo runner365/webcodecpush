@@ -1,12 +1,15 @@
+const BaseWriter = require('./BaseWriter');
 
-class Http3Writer {
+class Http3Writer extends BaseWriter{
     constructor() {
-        this.Init = false;
+        super();
         this.transport = null;
         this.stream = null;
     }
 
-    async init(url) {
+    async Init(host, uri) {
+        var url = 'https://' + host + '/' + uri;
+
         this.transport = new WebTransport(url);
 
         this.transport.closed.then(() => {
@@ -15,11 +18,14 @@ class Http3Writer {
             console.error('quictransport error ', error);
         });
 
+        console.log('start webtransport url:', url);
         await this.transport.ready;
+        console.log('webtransport is ready');
+
         this.stream = await transport.createBidirectionalStream();
     }
 
-    async write(data) {
+    async Send(data) {
         if (this.stream == null) {
             return;
         }
@@ -27,7 +33,7 @@ class Http3Writer {
         return;
     }
 
-    async close() {
+    async Close() {
         if (this.stream == null) {
             return;
         }
