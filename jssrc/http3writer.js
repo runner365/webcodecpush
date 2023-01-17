@@ -47,6 +47,9 @@ class Http3Writer extends BaseWriter{
     }
 
     async Send(data) {
+        if (!this._connectFlag) {
+            return;
+        }
         if (this.stream.writable.locked) {
             this.writer.write(data);
         } else {
@@ -60,7 +63,14 @@ class Http3Writer extends BaseWriter{
         if (this.stream == null) {
             return;
         }
-        this.stream.close();
+        this.encoder.Close();
+        this.encoder = null;
+
+        this.mux.SetWriter(null);
+        this.mux.Close();
+        this.mux = null;
+        
+        this.writer.close();
         this._connectFlag = false;
         this.stream = null;
     }

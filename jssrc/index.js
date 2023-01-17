@@ -1,9 +1,9 @@
 const WsWriter  = require('./WsWriter');
 const Http3Writer  = require('./Http3Writer');
 
-let mediaClient = null;
-let hostUrl = 'rtc1.cerceimedia.kuaishou.com';
-let subPath = '';
+var mediaClient = null;
+var hostUrl = 'rtc1.cerceimedia.kuaishou.com';
+var subPath = '';
 
 function GetMediaStats() {
     if (mediaClient == null) {

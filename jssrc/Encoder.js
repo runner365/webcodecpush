@@ -339,7 +339,6 @@ class Encoder {
                 const asink = this._aGenerator.writable;
                 this._aTransformer = new TransformStream({ transform: this.audioTransform() });
                 asource.pipeThrough(this._aTransformer).pipeTo(asink);  
-                
             } else {
                 this._screenSource.connect(this._destNode);
             }
