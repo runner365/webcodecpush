@@ -7,6 +7,7 @@ class Http3Writer extends BaseWriter{
         super();
         this.transport = null;
         this.stream = null;
+        this.writer = null;
     }
 
     async Init(host, uri) {
@@ -24,8 +25,13 @@ class Http3Writer extends BaseWriter{
         await this.transport.ready;
         console.log('webtransport is ready');
 
-        this.stream = await this.transport.createBidirectionalStream();
-        console.log('create stream in webtransport');
+        if (this.stream == null) {
+            console.log('creating stream in webtransport');
+            this.stream = await this.transport.createBidirectionalStream();
+            this.writer = this.stream.writable.getWriter();
+            this.writer.ready;
+            console.log('stream in webtransport is created...');
+        }
 
         this._connectFlag = true;
 
@@ -41,13 +47,11 @@ class Http3Writer extends BaseWriter{
     }
 
     async Send(data) {
-        if (this.stream == null) {
-            return;
+        if (this.stream.writable.locked) {
+            this.writer.write(data);
+        } else {
+            console.log("stream locked error, return:", this.stream.writable.locked);
         }
-        
-        await this.stream.writable.getWriter().ready;
-
-        await this.stream.writable.getWriter().write(data);
         
         return;
     }
