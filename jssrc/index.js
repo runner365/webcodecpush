@@ -1,15 +1,15 @@
 const WsWriter  = require('./WsWriter');
 const Http3Writer  = require('./Http3Writer');
 
-let wsClient = null;
-let hostUrl = '172.28.202.87';
+let mediaClient = null;
+let hostUrl = 'rtc1.cerceimedia.kuaishou.com';
 let subPath = '';
 
 function GetMediaStats() {
-    if (wsClient == null) {
+    if (mediaClient == null) {
         return;
     }
-    let stats = wsClient.GetMediaStats();
+    let stats = mediaClient.GetMediaStats();
     if (stats == null) {
         return;
     }
@@ -51,38 +51,40 @@ async function websocketConnect() {
     let subpath = document.getElementById('subpath').value;
     
     try {
-        wsClient = new WsWriter();
+        mediaClient = new WsWriter();
 
-        wsClient.SetCanvasElement(canvasElement);
+        mediaClient.SetCanvasElement(canvasElement);
         console.log("websocket url:", "ws://" + serverHost + "/" + subpath + ".flv")
-        let ret = await wsClient.Init(serverHost, subpath + ".flv");
+        let ret = await mediaClient.Init(serverHost, subpath + ".flv");
 
-        console.log("wsClient init return:", ret);
-        alert('websocket connect ok');
+        console.log("mediaClient init return:", ret);
+        alert('webtransport connect ok');
     } catch (error) {
-        console.log('wsClient init exception:', error);
+        console.log('mediaClient init exception:', error);
     }
 
 }
 
 async function websocketDisconnect() {
-    if (wsClient == null) {
+    if (mediaClient == null) {
         return;
     }
-    wsClient.Close();
-    wsClient = null;
+    mediaClient.Close();
+    mediaClient = null;
 
     return;
 }
 
 async function openCamera() {
-    if (wsClient == null) {
+    console.log("media client:", mediaClient);
+    
+    if (mediaClient == null) {
         alert('please connect server first...');
         return;
     }
     
     try {
-        wsClient.OpenCamera(document.getElementById('CanvasMediaId'));
+        mediaClient.OpenCamera(document.getElementById('CanvasMediaId'));
     } catch (error) {
         console.log('open camera error:', error);
         alert('open camera error:' + error);
@@ -90,13 +92,13 @@ async function openCamera() {
 }
 
 async function openScreenShared() {
-    if (wsClient == null) {
+    if (mediaClient == null) {
         alert('please connect server first...');
         return;
     }
     
     try {
-        wsClient.OpenScreenShared(document.getElementById('CanvasMediaId'));
+        mediaClient.OpenScreenShared(document.getElementById('CanvasMediaId'));
     } catch (error) {
         console.log('open shared screen error:', error);
         alert('open shared screen error:' + error);
@@ -104,23 +106,39 @@ async function openScreenShared() {
 }
 
 async function webtransportConnect() {
-    let transport = new WebTransport('https://rtc4.cerceimedia.kuaishou.com:4433/wt');
+    /*
+    let serverHost = document.getElementById('serverHost').value;
+    let subpath = document.getElementById('subpath').value;
+
+    let webtransUrl = "https://" + serverHost + ":" + hostPort + "/webtransport/push/" + subpath;
+    let transport = new WebTransport(webtransUrl);
     await transport.ready;
   
     let stream = await transport.createBidirectionalStream();
-    let reader = stream.readable.getReader();
+
     let writer = stream.writable.getWriter();
-  
-    await writer.write(new Uint8Array([61, 66, 67]));
-    let received = await reader.read();
-    await transport.close();
-  
-    console.log('received', received);
+    */
+
+    let canvasElement = document.getElementById('CanvasMediaId');
+    let serverHost = document.getElementById('serverHost').value;
+    let subpath = document.getElementById('subpath').value;
+    
+    try {
+        mediaClient = new Http3Writer();
+
+        mediaClient.SetCanvasElement(canvasElement);
+        await mediaClient.Init(serverHost, subpath + ".flv");
+
+        alert('websocket connect ok');
+    } catch (error) {
+        console.log('mediaClient init exception:', error);
+    }
+
 }
 
 document.getElementById('connectId').addEventListener('click', async ()=>{
-    //await webtransportConnect();
-    websocketConnect()
+    await webtransportConnect();
+    //websocketConnect()
 })
 
 document.getElementById('disconnectId').addEventListener('click', ()=>{
@@ -136,35 +154,35 @@ document.getElementById('screenId').addEventListener('click', ()=>{
 })
 
 document.getElementById('lefttop').addEventListener('click', ()=>{
-    if (wsClient == null) {
+    if (mediaClient == null) {
         alert('please connect server first...');
         return;
     }
-    wsClient.UpdateCameraPos(0);
+    mediaClient.UpdateCameraPos(0);
 })
 
 document.getElementById('righttop').addEventListener('click', ()=>{
-    if (wsClient == null) {
+    if (mediaClient == null) {
         alert('please connect server first...');
         return;
     }
-    wsClient.UpdateCameraPos(1);
+    mediaClient.UpdateCameraPos(1);
 })
 
 document.getElementById('leftbottom').addEventListener('click', ()=>{
-    if (wsClient == null) {
+    if (mediaClient == null) {
         alert('please connect server first...');
         return;
     }
-    wsClient.UpdateCameraPos(2);
+    mediaClient.UpdateCameraPos(2);
 })
 
 document.getElementById('rightbottom').addEventListener('click', ()=>{
-    if (wsClient == null) {
+    if (mediaClient == null) {
         alert('please connect server first...');
         return;
     }
-    wsClient.UpdateCameraPos(3);
+    mediaClient.UpdateCameraPos(3);
 })
 
 windowInit();
